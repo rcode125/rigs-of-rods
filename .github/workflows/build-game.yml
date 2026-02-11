@@ -1,36 +1,51 @@
-name: Build Rigs of Rods
+build-msvc:
+  name: Windows portable build
+  runs-on: windows-2022
+  env:
+    BUILD_TOOLS_PATH: C:\apps\build-tools\
+    CONAN_USER_HOME_SHORT: None
 
-on:
-  workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  steps:
+    - run: echo $env:BUILD_TOOLS_PATH | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-jobs:
-  build:
-    runs-on: windows-latest
+    - uses: actions/checkout@v6
+      with:
+        submodules: true
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Install Build tools
+      run: git clone https://git.anotherfoxguy.com/AnotherFoxGuy/build-tools.git %BUILD_TOOLS_PATH%
+      shell: cmd
 
-    - name: Install dependencies
+    - name: Cache conan packages
+      uses: actions/cache@v5
+      with:
+        key: conan-windows-${{ hashFiles('conanfile.py') }}
+        path: ~/.conan2
+
+    - name: Enable Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure
       run: |
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-        choco install git -y
-
-    - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        conan remote add ror-conan https://git.anotherfoxguy.com/api/packages/rorbot/conan -f
+        cmake . -GNinja -DCMAKE_BUILD_TYPE=Release -Bbuild -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=cmake/conan_provider.cmake -DCMAKE_INSTALL_PREFIX=redist -DCREATE_CONTENT_FOLDER=ON
+      shell: cmd
 
     - name: Build
-      run: cmake --build build --config Release
-
-    - name: Create ZIP artifact
       run: |
-        powershell Compress-Archive -Path build/Release/* -DestinationPath RoR-portable.zip
+        cd build
+        ninja install
+      shell: cmd
 
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Create portable ZIP
+      run: powershell Compress-Archive -Path redist\* -DestinationPath RoR-portable.zip
+
+    - name: Upload portable ZIP
+      uses: actions/upload-artifact@v6
       with:
-        files: RoR-portable.zip
+        name: RoR-portable-windows
+        path: RoR-portable.zip
+
+    - name: Clean Conan pkgs
+      run: conan cache clean "*" -sbd
+      shell: cmd
