@@ -1,51 +1,62 @@
-build-msvc:
-  name: Windows portable build
-  runs-on: windows-2022
-  env:
-    BUILD_TOOLS_PATH: C:\apps\build-tools\
-    CONAN_USER_HOME_SHORT: None
+name: Windows Portable Build
 
-  steps:
-    - run: echo $env:BUILD_TOOLS_PATH | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
 
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
+jobs:
+  windows:
+    name: Windows portable build
+    runs-on: windows-2022
+    env:
+      BUILD_TOOLS_PATH: C:\apps\build-tools\
+      CONAN_USER_HOME_SHORT: None
 
-    - name: Install Build tools
-      run: git clone https://git.anotherfoxguy.com/AnotherFoxGuy/build-tools.git %BUILD_TOOLS_PATH%
-      shell: cmd
+    steps:
+      - run: echo $env:BUILD_TOOLS_PATH | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-    - name: Cache conan packages
-      uses: actions/cache@v5
-      with:
-        key: conan-windows-${{ hashFiles('conanfile.py') }}
-        path: ~/.conan2
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
 
-    - name: Enable Developer Command Prompt
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Build tools
+        run: git clone https://git.anotherfoxguy.com/AnotherFoxGuy/build-tools.git %BUILD_TOOLS_PATH%
+        shell: cmd
 
-    - name: Configure
-      run: |
-        conan remote add ror-conan https://git.anotherfoxguy.com/api/packages/rorbot/conan -f
-        cmake . -GNinja -DCMAKE_BUILD_TYPE=Release -Bbuild -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=cmake/conan_provider.cmake -DCMAKE_INSTALL_PREFIX=redist -DCREATE_CONTENT_FOLDER=ON
-      shell: cmd
+      - name: Cache conan packages
+        uses: actions/cache@v5
+        with:
+          key: conan-windows-${{ hashFiles('conanfile.py') }}
+          path: ~/.conan2
 
-    - name: Build
-      run: |
-        cd build
-        ninja install
-      shell: cmd
+      - name: Enable Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Create portable ZIP
-      run: powershell Compress-Archive -Path redist\* -DestinationPath RoR-portable.zip
+      - name: Configure
+        run: |
+          conan remote add ror-conan https://git.anotherfoxguy.com/api/packages/rorbot/conan -f
+          cmake . -GNinja -DCMAKE_BUILD_TYPE=Release -Bbuild -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=cmake/conan_provider.cmake -DCMAKE_INSTALL_PREFIX=redist -DCREATE_CONTENT_FOLDER=ON
+        shell: cmd
 
-    - name: Upload portable ZIP
-      uses: actions/upload-artifact@v6
-      with:
-        name: RoR-portable-windows
-        path: RoR-portable.zip
+      - name: Build
+        run: |
+          cd build
+          ninja install
+        shell: cmd
 
-    - name: Clean Conan pkgs
-      run: conan cache clean "*" -sbd
-      shell: cmd
+      - name: Check redist folder
+        run: |
+          if (!(Test-Path redist)) { Write-Error "redist folder missing after build"; exit 1 }
+        shell: powershell
+
+      - name: Create portable ZIP
+        run: |
+          Compress-Archive -Path redist\* -DestinationPath RoR-portable.zip -Force
+        shell: powershell
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v6
+        with:
+          name: RoR-portable-windows
+          path: RoR-portable.zip
